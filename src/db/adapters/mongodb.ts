@@ -1,6 +1,15 @@
-import { getMongooseConnection, QRModel, type QRDocument } from '../mongoose-client';
-import type { QRDatabaseAdapter } from '../adapter';
-import type { ListQROptions, ListQRResult, QRRecord, ScanLogEntry } from '@/types/qr';
+import {
+  getMongooseConnection,
+  QRModel,
+  type QRDocument,
+} from "../mongoose-client";
+import type { QRDatabaseAdapter } from "../adapter";
+import type {
+  ListQROptions,
+  ListQRResult,
+  QRRecord,
+  ScanLogEntry,
+} from "@/types/qr";
 
 function toQRRecord(doc: QRDocument): QRRecord {
   return {
@@ -9,17 +18,18 @@ function toQRRecord(doc: QRDocument): QRRecord {
     originalUrl: doc.originalUrl,
     trackingUrl: doc.trackingUrl,
     label: doc.label ?? null,
-    dotShape: doc.dotShape as QRRecord['dotShape'],
-    eyeOuterShape: doc.eyeOuterShape as QRRecord['eyeOuterShape'],
-    eyeInnerShape: doc.eyeInnerShape as QRRecord['eyeInnerShape'],
+    dotShape: doc.dotShape as QRRecord["dotShape"],
+    eyeOuterShape: doc.eyeOuterShape as QRRecord["eyeOuterShape"],
+    eyeInnerShape: doc.eyeInnerShape as QRRecord["eyeInnerShape"],
     fgColor: doc.fgColor,
     bgColor: doc.bgColor,
-    overallShape: doc.overallShape as QRRecord['overallShape'],
+    overallShape: doc.overallShape as QRRecord["overallShape"],
     cornerRadius: doc.cornerRadius ?? null,
-    errorCorrection: doc.errorCorrection as QRRecord['errorCorrection'],
+    errorCorrection: doc.errorCorrection as QRRecord["errorCorrection"],
     logoUrl: doc.logoUrl ?? null,
     sizePixels: doc.sizePixels,
     imageStoragePath: doc.imageStoragePath,
+    svgStoragePath: doc.svgStoragePath ?? null,
     scanCount: doc.scanCount,
     scanLogs: (doc.scanLogs ?? []).map((l) => ({
       scannedAt: new Date(l.scannedAt).toISOString(),
@@ -38,7 +48,9 @@ export class MongoDBAdapter implements QRDatabaseAdapter {
     await getMongooseConnection();
   }
 
-  async createQR(record: Omit<QRRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<QRRecord> {
+  async createQR(
+    record: Omit<QRRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<QRRecord> {
     await this.ready();
     const doc = await QRModel.create(record);
     return toQRRecord(doc);
@@ -50,12 +62,15 @@ export class MongoDBAdapter implements QRDatabaseAdapter {
     return doc ? toQRRecord(doc) : null;
   }
 
-  async incrementScan(uniqueCode: string, entry: ScanLogEntry): Promise<QRRecord | null> {
+  async incrementScan(
+    uniqueCode: string,
+    entry: ScanLogEntry,
+  ): Promise<QRRecord | null> {
     await this.ready();
     const doc = await QRModel.findOneAndUpdate(
       { uniqueCode },
       { $inc: { scanCount: 1 }, $push: { scanLogs: entry } },
-      { new: true }
+      { new: true },
     );
     return doc ? toQRRecord(doc) : null;
   }
@@ -63,7 +78,7 @@ export class MongoDBAdapter implements QRDatabaseAdapter {
   async listQRs(options: ListQROptions): Promise<ListQRResult> {
     await this.ready();
     const filter: Record<string, unknown> = {};
-    if (options.label) filter.label = { $regex: options.label, $options: 'i' };
+    if (options.label) filter.label = { $regex: options.label, $options: "i" };
     if (options.isActive !== undefined) filter.isActive = options.isActive;
     if (options.dateFrom || options.dateTo) {
       filter.createdAt = {
@@ -74,7 +89,10 @@ export class MongoDBAdapter implements QRDatabaseAdapter {
 
     const skip = (options.page - 1) * options.limit;
     const [docs, total] = await Promise.all([
-      QRModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(options.limit),
+      QRModel.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(options.limit),
       QRModel.countDocuments(filter),
     ]);
 
@@ -89,13 +107,21 @@ export class MongoDBAdapter implements QRDatabaseAdapter {
 
   async deactivateQR(uniqueCode: string): Promise<QRRecord | null> {
     await this.ready();
-    const doc = await QRModel.findOneAndUpdate({ uniqueCode }, { isActive: false }, { new: true });
+    const doc = await QRModel.findOneAndUpdate(
+      { uniqueCode },
+      { isActive: false },
+      { new: true },
+    );
     return doc ? toQRRecord(doc) : null;
   }
 
   async activateQR(uniqueCode: string): Promise<QRRecord | null> {
     await this.ready();
-    const doc = await QRModel.findOneAndUpdate({ uniqueCode }, { isActive: true }, { new: true });
+    const doc = await QRModel.findOneAndUpdate(
+      { uniqueCode },
+      { isActive: true },
+      { new: true },
+    );
     return doc ? toQRRecord(doc) : null;
   }
 

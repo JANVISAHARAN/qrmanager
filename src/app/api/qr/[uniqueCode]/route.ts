@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getQrByCode, deactivateQr } from '@/services/qrService';
-import { errorResponse } from '@/lib/errors';
+import { NextRequest, NextResponse } from "next/server";
+import { getQrByCode, deactivateQr } from "@/services/qrService";
+import { errorResponse } from "@/lib/errors";
 
 interface Params {
   params: { uniqueCode: string };

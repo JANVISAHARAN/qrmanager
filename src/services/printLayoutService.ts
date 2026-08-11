@@ -1,9 +1,9 @@
-import sharp from 'sharp';
-import path from 'path';
-import fs from 'fs/promises';
-import { getAdapter } from '@/db';
-import { ApiError } from '@/lib/errors';
-import type { PrintLayoutOptions } from '@/types/qr';
+import sharp from "sharp";
+import path from "path";
+import fs from "fs/promises";
+import { getAdapter } from "@/db";
+import { ApiError } from "@/lib/errors";
+import type { PrintLayoutOptions } from "@/types/qr";
 
 const PAPER_SIZES: Record<string, { width: number; height: number }> = {
   A4: { width: 794, height: 1123 },
@@ -11,18 +11,33 @@ const PAPER_SIZES: Record<string, { width: number; height: number }> = {
   Letter: { width: 816, height: 1056 },
 };
 
-function getPageDimensions(options: PrintLayoutOptions) {
-  if (options.paperSize === 'Custom') {
+function getPageDimensions(options: PrintLayoutOptions): {
+  width: number;
+  height: number;
+} {
+  if (options.paperSize === "Custom") {
     if (!options.customWidth || !options.customHeight) {
       throw new ApiError(
-        'INVALID_PAPER_SIZE',
+        "INVALID_PAPER_SIZE",
         'customWidth and customHeight are required when paperSize is "Custom".',
-        400
+        400,
       );
     }
     return { width: options.customWidth, height: options.customHeight };
   }
-  return PAPER_SIZES[options.paperSize];
+
+  const dimensions = PAPER_SIZES[options.paperSize];
+  if (!dimensions) {
+    // Defensive only - Zod already restricts paperSize to a known enum,
+    // so this branch is unreachable at runtime, but strict mode can't
+    // prove that from a Record<string, ...> lookup.
+    throw new ApiError(
+      "INVALID_PAPER_SIZE",
+      `Unknown paperSize "${options.paperSize}".`,
+      400,
+    );
+  }
+  return dimensions;
 }
 
 /**
@@ -30,7 +45,9 @@ function getPageDimensions(options: PrintLayoutOptions) {
  * derived from page width, column count, and margins; QR codes are placed
  * left-to-right, top-to-bottom; overflow spills onto additional pages.
  */
-export async function generatePrintLayout(options: PrintLayoutOptions): Promise<Buffer[]> {
+export async function generatePrintLayout(
+  options: PrintLayoutOptions,
+): Promise<Buffer[]> {
   const { width: pageWidth, height: pageHeight } = getPageDimensions(options);
   const adapter = getAdapter();
 
@@ -38,19 +55,25 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
     options.qrCodes.map(async (code) => {
       const record = await adapter.getQRByCode(code);
       if (!record) {
-        throw new ApiError('QR_NOT_FOUND', `No QR code found for uniqueCode "${code}".`, 404);
+        throw new ApiError(
+          "QR_NOT_FOUND",
+          `No QR code found for uniqueCode "${code}".`,
+          404,
+        );
       }
       return record;
-    })
+    }),
   );
 
   const { columns, rows, margin, padding } = options;
   const perPage = columns * rows;
 
   const cellWidth = Math.floor((pageWidth - (columns + 1) * margin) / columns);
-  const labelReservedHeight = options.showLabel || options.showUniqueCode ? 40 : 0;
+  const labelReservedHeight =
+    options.showLabel || options.showUniqueCode ? 40 : 0;
   const cellHeight = Math.floor((pageHeight - (rows + 1) * margin) / rows);
-  const qrDrawSize = Math.min(cellWidth, cellHeight - labelReservedHeight) - padding * 2;
+  const qrDrawSize =
+    Math.min(cellWidth, cellHeight - labelReservedHeight) - padding * 2;
 
   const pages: Buffer[] = [];
 
@@ -60,8 +83,7 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
     const composites: sharp.OverlayOptions[] = [];
     const svgTextLayers: string[] = [];
 
-    for (let i = 0; i < pageRecords.length; i++) {
-      const record = pageRecords[i];
+    for (const [i, record] of pageRecords.entries()) {
       const col = i % columns;
       const row = Math.floor(i / columns);
 
@@ -70,8 +92,8 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
       const qrX = cellX + padding;
       const qrY = cellY + padding;
 
-      const storagePath = record.imageStoragePath.startsWith('/')
-        ? path.join(process.cwd(), 'public', record.imageStoragePath)
+      const storagePath = record.imageStoragePath.startsWith("/")
+        ? path.join(process.cwd(), "public", record.imageStoragePath)
         : record.imageStoragePath;
 
       let qrBuffer: Buffer;
@@ -79,14 +101,17 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
         qrBuffer = await fs.readFile(storagePath);
       } catch {
         throw new ApiError(
-          'IMAGE_NOT_FOUND',
+          "IMAGE_NOT_FOUND",
           `Stored QR image for "${record.uniqueCode}" could not be read from disk.`,
-          500
+          500,
         );
       }
 
       const resized = await sharp(qrBuffer)
-        .resize(qrDrawSize, qrDrawSize, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 0 } })
+        .resize(qrDrawSize, qrDrawSize, {
+          fit: "contain",
+          background: { r: 255, g: 255, b: 255, alpha: 0 },
+        })
         .png()
         .toBuffer();
 
@@ -104,9 +129,9 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
         const textSvg = lines
           .map(
             (line, idx) =>
-              `<text x="${qrX + qrDrawSize / 2}" y="${textY + idx * 16}" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111" text-anchor="middle">${line}</text>`
+              `<text x="${qrX + qrDrawSize / 2}" y="${textY + idx * 16}" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#111111" text-anchor="middle">${line}</text>`,
           )
-          .join('');
+          .join("");
         svgTextLayers.push(textSvg);
       }
     }
@@ -121,7 +146,7 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
     }).composite(composites);
 
     if (svgTextLayers.length > 0) {
-      const overlaySvg = `<svg width="${pageWidth}" height="${pageHeight}" xmlns="http://www.w3.org/2000/svg">${svgTextLayers.join('')}</svg>`;
+      const overlaySvg = `<svg width="${pageWidth}" height="${pageHeight}" xmlns="http://www.w3.org/2000/svg">${svgTextLayers.join("")}</svg>`;
       page = sharp(await page.png().toBuffer()).composite([
         { input: Buffer.from(overlaySvg), top: 0, left: 0 },
       ]);
@@ -135,9 +160,9 @@ export async function generatePrintLayout(options: PrintLayoutOptions): Promise<
 
 function escapeXml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

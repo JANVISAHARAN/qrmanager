@@ -6,16 +6,21 @@
 // squares are dark/light, after error-correction + masking). We then
 // hand-draw that matrix as an SVG - choosing a shape per module for the
 // dot style, and separate custom shapes for the three finder-pattern
-// "eyes" - and rasterize the SVG to PNG using `sharp`, which ships
-// prebuilt binaries so `npm install` never needs to compile anything.
+// "eyes" - with the outer clipping shape (square/circle/rounded-rect)
+// baked in as an SVG clip-path so the SVG *is* the single source of
+// truth: the PNG (mandatory output) is simply this SVG rasterized via
+// `sharp`, and the SVG itself is offered directly as the bonus export
+// format, guaranteeing the two are always visually identical.
 
 import QRCode from "qrcode";
 import sharp from "sharp";
+import { prepareLogo } from "./imageProcessing";
 import type {
   CreateQRInput,
   DotShape,
   EyeInnerShape,
   EyeOuterShape,
+  OverallShape,
 } from "@/types/qr";
 
 export interface RenderQrOptions {
@@ -28,7 +33,14 @@ export interface RenderQrOptions {
   bgColor: string; // hex or 'transparent'
   gradient?: CreateQRInput["gradient"];
   errorCorrection: "L" | "M" | "Q" | "H";
+  overallShape: OverallShape;
+  cornerRadius?: number | null;
   logoBuffer?: Buffer;
+}
+
+export interface RenderQrResult {
+  png: Buffer;
+  svg: string;
 }
 
 const MARGIN_MODULES = 4; // quiet zone, per QR spec recommendation
@@ -108,13 +120,37 @@ function renderEye(
   return roundedRing + innerShapeSvg;
 }
 
-export async function renderQrPng(options: RenderQrOptions): Promise<Buffer> {
+/** Builds the SVG clipPath definition for the outer QR shape (spec 3.1.5). */
+function buildOuterClip(
+  shape: OverallShape,
+  sizePixels: number,
+  cornerRadius?: number | null,
+): string {
+  if (shape === "square") {
+    return `<clipPath id="outerClip"><rect x="0" y="0" width="${sizePixels}" height="${sizePixels}"/></clipPath>`;
+  }
+  if (shape === "circle") {
+    const r = sizePixels / 2;
+    return `<clipPath id="outerClip"><circle cx="${r}" cy="${r}" r="${r}"/></clipPath>`;
+  }
+  const radius = cornerRadius ?? Math.round(sizePixels * 0.08);
+  return `<clipPath id="outerClip"><rect x="0" y="0" width="${sizePixels}" height="${sizePixels}" rx="${radius}" ry="${radius}"/></clipPath>`;
+}
+
+/**
+ * Renders a styled QR code, returning both a PNG buffer (mandatory
+ * format) and the raw SVG markup (bonus export format) built from the
+ * exact same module/eye/clip data, so the two are guaranteed identical.
+ */
+export async function renderQr(
+  options: RenderQrOptions,
+): Promise<RenderQrResult> {
   const qr = QRCode.create(options.data, {
     errorCorrectionLevel: options.errorCorrection,
   });
 
   const matrixSize = qr.modules.size;
-  const moduleData = qr.modules.data;
+  const moduleData = qr.modules.data; // Uint8Array, 1 = dark, 0 = light
   const totalModules = matrixSize + MARGIN_MODULES * 2;
   const m = options.sizePixels / totalModules;
   const offset = MARGIN_MODULES * m;
@@ -141,7 +177,7 @@ export async function renderQrPng(options: RenderQrOptions): Promise<Buffer> {
   const moduleShapes: string[] = [];
   for (let row = 0; row < matrixSize; row++) {
     for (let col = 0; col < matrixSize; col++) {
-      if (isInFinderZone(row, col, matrixSize)) continue;
+      if (isInFinderZone(row, col, matrixSize)) continue; // eyes drawn separately
       const dark = moduleData[row * matrixSize + col] === 1;
       if (!dark) continue;
       const x = offset + col * m;
@@ -166,30 +202,34 @@ export async function renderQrPng(options: RenderQrOptions): Promise<Buffer> {
     ),
   );
 
+  const outerClip = buildOuterClip(
+    options.overallShape,
+    options.sizePixels,
+    options.cornerRadius,
+  );
+
   const svg = `<svg width="${options.sizePixels}" height="${options.sizePixels}" viewBox="0 0 ${options.sizePixels} ${options.sizePixels}" xmlns="http://www.w3.org/2000/svg">
-    <defs>${gradientDef}</defs>
-    ${backgroundRect}
-    ${moduleShapes.join("")}
-    ${eyeShapes.join("")}
+    <defs>${gradientDef}${outerClip}</defs>
+    <g clip-path="url(#outerClip)">
+      ${backgroundRect}
+      ${moduleShapes.join("")}
+      ${eyeShapes.join("")}
+    </g>
   </svg>`;
 
   let png = await sharp(Buffer.from(svg)).png().toBuffer();
 
   if (options.logoBuffer) {
     const logoTargetSize = Math.round(options.sizePixels * 0.22);
-    const resizedLogo = await sharp(options.logoBuffer)
-      .resize(logoTargetSize, logoTargetSize, {
-        fit: "contain",
-        background: "#FFFFFF",
-      })
-      .png()
-      .toBuffer();
+    // prepareLogo adds an explicit white padding ring around the logo so
+    // it never touches the QR dots directly (spec 3.1.6).
+    const paddedLogo = await prepareLogo(options.logoBuffer, logoTargetSize);
     const left = Math.round((options.sizePixels - logoTargetSize) / 2);
     png = await sharp(png)
-      .composite([{ input: resizedLogo, top: left, left }])
+      .composite([{ input: paddedLogo, top: left, left }])
       .png()
       .toBuffer();
   }
 
-  return png;
+  return { png, svg };
 }

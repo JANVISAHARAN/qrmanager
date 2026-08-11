@@ -1,5 +1,5 @@
-import sharp from 'sharp';
-import type { OverallShape } from '@/types/qr';
+import sharp from "sharp";
+import type { OverallShape } from "@/types/qr";
 
 /**
  * Applies the outer clipping mask requested in spec 3.1.5.
@@ -14,14 +14,14 @@ export async function applyOverallShape(
   pngBuffer: Buffer,
   shape: OverallShape,
   sizePixels: number,
-  cornerRadius?: number | null
+  cornerRadius?: number | null,
 ): Promise<Buffer> {
-  if (shape === 'square') {
+  if (shape === "square") {
     return pngBuffer;
   }
 
   let maskSvg: string;
-  if (shape === 'circle') {
+  if (shape === "circle") {
     const r = sizePixels / 2;
     maskSvg = `<svg width="${sizePixels}" height="${sizePixels}"><circle cx="${r}" cy="${r}" r="${r}" fill="#fff"/></svg>`;
   } else {
@@ -33,7 +33,7 @@ export async function applyOverallShape(
 
   return sharp(pngBuffer)
     .resize(sizePixels, sizePixels)
-    .composite([{ input: mask, blend: 'dest-in' }])
+    .composite([{ input: mask, blend: "dest-in" }])
     .png()
     .toBuffer();
 }
@@ -46,13 +46,13 @@ export async function applyOverallShape(
 export async function prepareLogo(
   logoInput: Buffer,
   targetSizePixels: number,
-  paddingColor = '#FFFFFF'
+  paddingColor = "#FFFFFF",
 ): Promise<Buffer> {
   const innerSize = Math.round(targetSizePixels * 0.8);
   const paddingPx = Math.round(targetSizePixels * 0.1);
 
   const resizedLogo = await sharp(logoInput)
-    .resize(innerSize, innerSize, { fit: 'contain', background: paddingColor })
+    .resize(innerSize, innerSize, { fit: "contain", background: paddingColor })
     .toBuffer();
 
   return sharp({
@@ -70,15 +70,37 @@ export async function prepareLogo(
 
 /** Writes a PNG buffer to disk under /public/qr-images and returns the
  * public path to store in imageStoragePath (spec 3.2.2 + FAQ Q4). */
-export async function saveQrImage(buffer: Buffer, filename: string): Promise<string> {
-  const fs = await import('fs/promises');
-  const path = await import('path');
+export async function saveQrImage(
+  buffer: Buffer,
+  filename: string,
+): Promise<string> {
+  const fs = await import("fs/promises");
+  const path = await import("path");
   const storageDir =
-    process.env.QR_IMAGE_STORAGE_PATH ?? path.join(process.cwd(), 'public', 'qr-images');
+    process.env.QR_IMAGE_STORAGE_PATH ??
+    path.join(process.cwd(), "public", "qr-images");
 
   await fs.mkdir(storageDir, { recursive: true });
   const fullPath = path.join(storageDir, filename);
   await fs.writeFile(fullPath, buffer);
+
+  return `/qr-images/${filename}`;
+}
+
+/** Writes the bonus SVG export alongside the mandatory PNG. */
+export async function saveSvgFile(
+  svg: string,
+  filename: string,
+): Promise<string> {
+  const fs = await import("fs/promises");
+  const path = await import("path");
+  const storageDir =
+    process.env.QR_IMAGE_STORAGE_PATH ??
+    path.join(process.cwd(), "public", "qr-images");
+
+  await fs.mkdir(storageDir, { recursive: true });
+  const fullPath = path.join(storageDir, filename);
+  await fs.writeFile(fullPath, svg, "utf-8");
 
   return `/qr-images/${filename}`;
 }

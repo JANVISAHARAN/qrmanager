@@ -3,17 +3,17 @@
 // routes agree on exactly the same shape.
 
 export type DotShape =
-  | 'square'
-  | 'rounded'
-  | 'dots'
-  | 'classy'
-  | 'classy-rounded'
-  | 'extra-rounded';
+  | "square"
+  | "rounded"
+  | "dots"
+  | "classy"
+  | "classy-rounded"
+  | "extra-rounded";
 
-export type EyeOuterShape = 'square' | 'rounded';
-export type EyeInnerShape = 'square' | 'dot' | 'rounded';
-export type OverallShape = 'square' | 'circle' | 'rounded-rectangle';
-export type ErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H';
+export type EyeOuterShape = "square" | "rounded";
+export type EyeInnerShape = "square" | "dot" | "rounded";
+export type OverallShape = "square" | "circle" | "rounded-rectangle";
+export type ErrorCorrectionLevel = "L" | "M" | "Q" | "H";
 
 export interface ScanLogEntry {
   scannedAt: string; // ISO date string
@@ -42,6 +42,7 @@ export interface QRRecord {
   logoUrl: string | null;
   sizePixels: number;
   imageStoragePath: string;
+  svgStoragePath: string | null; // bonus: SVG export alongside the mandatory PNG
   scanCount: number;
   scanLogs: ScanLogEntry[];
   createdAt: string;
@@ -60,7 +61,7 @@ export interface CreateQRInput {
   fgColor?: string;
   bgColor?: string;
   gradient?: {
-    type: 'linear' | 'radial';
+    type: "linear" | "radial";
     startColor: string;
     endColor: string;
   };
@@ -90,7 +91,7 @@ export interface ListQRResult {
 }
 
 export interface PrintLayoutOptions {
-  paperSize: 'A4' | 'A5' | 'Letter' | 'Custom';
+  paperSize: "A4" | "A5" | "Letter" | "Custom";
   customWidth?: number;
   customHeight?: number;
   columns: number;

@@ -1,6 +1,11 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { QRDatabaseAdapter } from '../adapter';
-import type { ListQROptions, ListQRResult, QRRecord, ScanLogEntry } from '@/types/qr';
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { QRDatabaseAdapter } from "../adapter";
+import type {
+  ListQROptions,
+  ListQRResult,
+  QRRecord,
+  ScanLogEntry,
+} from "@/types/qr";
 
 /*
 SQL to create the matching table in Supabase (also see /supabase/schema.sql):
@@ -22,6 +27,7 @@ create table qr_codes (
   logo_url text,
   size_pixels integer not null,
   image_storage_path text not null,
+  svg_storage_path text,
   scan_count integer not null default 0,
   scan_logs jsonb not null default '[]',
   created_by text,
@@ -50,6 +56,7 @@ function toQRRecord(row: any): QRRecord {
     logoUrl: row.logo_url ?? null,
     sizePixels: row.size_pixels,
     imageStoragePath: row.image_storage_path,
+    svgStoragePath: row.svg_storage_path ?? null,
     scanCount: row.scan_count,
     scanLogs: row.scan_logs ?? [],
     createdAt: row.created_at,
@@ -59,7 +66,7 @@ function toQRRecord(row: any): QRRecord {
   };
 }
 
-function toRow(record: Omit<QRRecord, 'id' | 'createdAt' | 'updatedAt'>) {
+function toRow(record: Omit<QRRecord, "id" | "createdAt" | "updatedAt">) {
   return {
     unique_code: record.uniqueCode,
     original_url: record.originalUrl,
@@ -76,6 +83,7 @@ function toRow(record: Omit<QRRecord, 'id' | 'createdAt' | 'updatedAt'>) {
     logo_url: record.logoUrl,
     size_pixels: record.sizePixels,
     image_storage_path: record.imageStoragePath,
+    svg_storage_path: record.svgStoragePath,
     scan_count: record.scanCount,
     scan_logs: record.scanLogs,
     created_by: record.createdBy,
@@ -90,14 +98,18 @@ export class SupabaseAdapter implements QRDatabaseAdapter {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_ANON_KEY;
     if (!url || !key) {
-      throw new Error('SUPABASE_URL / SUPABASE_ANON_KEY are not set in the environment');
+      throw new Error(
+        "SUPABASE_URL / SUPABASE_ANON_KEY are not set in the environment",
+      );
     }
     this.client = createClient(url, key);
   }
 
-  async createQR(record: Omit<QRRecord, 'id' | 'createdAt' | 'updatedAt'>): Promise<QRRecord> {
+  async createQR(
+    record: Omit<QRRecord, "id" | "createdAt" | "updatedAt">,
+  ): Promise<QRRecord> {
     const { data, error } = await this.client
-      .from('qr_codes')
+      .from("qr_codes")
       .insert(toRow(record))
       .select()
       .single();
@@ -107,26 +119,29 @@ export class SupabaseAdapter implements QRDatabaseAdapter {
 
   async getQRByCode(uniqueCode: string): Promise<QRRecord | null> {
     const { data, error } = await this.client
-      .from('qr_codes')
-      .select('*')
-      .eq('unique_code', uniqueCode)
+      .from("qr_codes")
+      .select("*")
+      .eq("unique_code", uniqueCode)
       .maybeSingle();
     if (error) throw new Error(error.message);
     return data ? toQRRecord(data) : null;
   }
 
-  async incrementScan(uniqueCode: string, entry: ScanLogEntry): Promise<QRRecord | null> {
+  async incrementScan(
+    uniqueCode: string,
+    entry: ScanLogEntry,
+  ): Promise<QRRecord | null> {
     const existing = await this.getQRByCode(uniqueCode);
     if (!existing) return null;
 
     const { data, error } = await this.client
-      .from('qr_codes')
+      .from("qr_codes")
       .update({
         scan_count: existing.scanCount + 1,
         scan_logs: [...existing.scanLogs, entry],
         updated_at: new Date().toISOString(),
       })
-      .eq('unique_code', uniqueCode)
+      .eq("unique_code", uniqueCode)
       .select()
       .single();
     if (error) throw new Error(error.message);
@@ -134,16 +149,17 @@ export class SupabaseAdapter implements QRDatabaseAdapter {
   }
 
   async listQRs(options: ListQROptions): Promise<ListQRResult> {
-    let query = this.client.from('qr_codes').select('*', { count: 'exact' });
+    let query = this.client.from("qr_codes").select("*", { count: "exact" });
 
-    if (options.label) query = query.ilike('label', `%${options.label}%`);
-    if (options.isActive !== undefined) query = query.eq('is_active', options.isActive);
-    if (options.dateFrom) query = query.gte('created_at', options.dateFrom);
-    if (options.dateTo) query = query.lte('created_at', options.dateTo);
+    if (options.label) query = query.ilike("label", `%${options.label}%`);
+    if (options.isActive !== undefined)
+      query = query.eq("is_active", options.isActive);
+    if (options.dateFrom) query = query.gte("created_at", options.dateFrom);
+    if (options.dateTo) query = query.lte("created_at", options.dateTo);
 
     const from = (options.page - 1) * options.limit;
     const to = from + options.limit - 1;
-    query = query.order('created_at', { ascending: false }).range(from, to);
+    query = query.order("created_at", { ascending: false }).range(from, to);
 
     const { data, error, count } = await query;
     if (error) throw new Error(error.message);
@@ -160,9 +176,9 @@ export class SupabaseAdapter implements QRDatabaseAdapter {
 
   async deactivateQR(uniqueCode: string): Promise<QRRecord | null> {
     const { data, error } = await this.client
-      .from('qr_codes')
+      .from("qr_codes")
       .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('unique_code', uniqueCode)
+      .eq("unique_code", uniqueCode)
       .select()
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -171,9 +187,9 @@ export class SupabaseAdapter implements QRDatabaseAdapter {
 
   async activateQR(uniqueCode: string): Promise<QRRecord | null> {
     const { data, error } = await this.client
-      .from('qr_codes')
+      .from("qr_codes")
       .update({ is_active: true, updated_at: new Date().toISOString() })
-      .eq('unique_code', uniqueCode)
+      .eq("unique_code", uniqueCode)
       .select()
       .maybeSingle();
     if (error) throw new Error(error.message);
@@ -182,9 +198,9 @@ export class SupabaseAdapter implements QRDatabaseAdapter {
 
   async existsByCode(uniqueCode: string): Promise<boolean> {
     const { count, error } = await this.client
-      .from('qr_codes')
-      .select('*', { count: 'exact', head: true })
-      .eq('unique_code', uniqueCode);
+      .from("qr_codes")
+      .select("*", { count: "exact", head: true })
+      .eq("unique_code", uniqueCode);
     if (error) throw new Error(error.message);
     return (count ?? 0) > 0;
   }
